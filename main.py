@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 import secrets
 
-# ===== FUNGSI CHACHA20 ENCRYPTION DENGAN KUNCI USER =====
+# ===== FUNGSI CHACHA20 =====
 
 def derive_chacha_key(user_key):
     """Derive 32-byte key from user input using SHA256"""
@@ -202,7 +202,7 @@ def decode_image(image):
     except:
         return "Tidak dapat mendekode pesan. Mungkin gambar tidak mengandung pesan tersembunyi."
 
-# ===== FUNGSI FILE ENCRYPTION (AES) - HASIL SELALU PDF =====
+# ===== FUNGSI FILE ENCRYPTION (AES) =====
 
 def generate_key_from_password(password, salt=None):
     """Generate encryption key from password using PBKDF2"""
@@ -255,41 +255,7 @@ def decrypt_file(encrypted_data, password):
     except Exception as e:
         return None, str(e)
 
-def create_pdf_report(original_filename, operation_type, file_size, status):
-    """Create a simple PDF report about the encryption/decryption operation"""
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import letter
-    from datetime import datetime
-    
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    
-    # Title
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(100, height - 100, "Laporan Enkripsi/Dekripsi File")
-    
-    # Operation details
-    p.setFont("Helvetica", 12)
-    p.drawString(100, height - 140, f"Jenis Operasi: {operation_type}")
-    p.drawString(100, height - 160, f"Nama File: {original_filename}")
-    p.drawString(100, height - 180, f"Ukuran File: {file_size}")
-    p.drawString(100, height - 200, f"Status: {status}")
-    p.drawString(100, height - 220, f"Tanggal: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # Security info
-    p.drawString(100, height - 260, "Informasi Keamanan:")
-    p.drawString(100, height - 280, "- Menggunakan algoritma AES-256")
-    p.drawString(100, height - 300, "- Key derivation: PBKDF2 dengan 100,000 iterasi")
-    p.drawString(100, height - 320, "- Salt random untuk setiap operasi")
-    
-    p.showPage()
-    p.save()
-    
-    buffer.seek(0)
-    return buffer.getvalue()
 
-# ===== FUNGSI DATABASE & AUTH (TANPA ENKRIPSI CAESAR) =====
 
 def hash_password(password):
     return hashlib.sha512(password.encode()).hexdigest()
@@ -454,7 +420,7 @@ def delete_car(car_id):
         st.error(f"Error: {e}")
         return False
 
-# ===== PAGE DEFINITIONS =====
+# ===== PAGE =====
 
 def page_super_encryption():
     st.header("🔐 Super Enkripsi - Caesar + XOR")
@@ -608,8 +574,7 @@ def page_super_encryption():
             st.text_input("Salin hasil dekripsi:", value=final_result, key="decrypted_result")
 
 def page_car_database():
-    st.header("🚗 Database Mobil dengan Enkripsi ChaCha20")
-    st.write("Kelola data mobil dengan enkripsi ChaCha20 - **Data akan tetap ditampilkan meski kunci salah**")
+    st.header("🚗 Database Mobil dengan Enkripsi ChaCha20") 
     
     # Initialize car database
     init_car_db()
@@ -654,21 +619,6 @@ def page_car_database():
         - Kunci salah akan menampilkan karakter acak atau pesan error
         """)
         
-        # Test kunci
-        if st.button("🧪 Test Kunci Ini"):
-            test_text = "Data testing 123"
-            encrypted = encrypt_chacha20(test_text, encryption_key)
-            if encrypted:
-                decrypted = decrypt_chacha20(encrypted, encryption_key)
-                st.write(f"**Test Enkripsi/Deskripsi:**")
-                st.write(f"Original: `{test_text}`")
-                st.write(f"Terenkripsi: `{encrypted[:50]}...`")
-                st.write(f"Terdekripsi: `{decrypted}`")
-                
-                if decrypted == test_text:
-                    st.success("✅ Kunci berfungsi dengan baik!")
-                else:
-                    st.warning("⚠️ Kunci menghasilkan output yang tidak sesuai!")
 
     tab1, tab2 = st.tabs(["➕ Tambah Mobil", "📋 Lihat & Hapus Mobil"])
     
@@ -1173,13 +1123,6 @@ def page_file_encryption():
                 else:
                     st.success("✅ File berhasil didekripsi!")
                     
-                    # Buat PDF report untuk dekripsi
-                    pdf_report = create_pdf_report(
-                        original_filename=encrypted_file.name,
-                        operation_type="DEKRIPSI",
-                        file_size=f"{encrypted_file.size / 1024:.2f} KB",
-                        status="BERHASIL"
-                    )
                     
                     # Tentukan nama file output
                     if original_filename:
@@ -1216,12 +1159,6 @@ def page_file_encryption():
                     )
                     
                     # Download PDF report dekripsi
-                    st.download_button(
-                        label="📋 Download Laporan Dekripsi (PDF)",
-                        data=pdf_report,
-                        file_name=f"laporan_dekripsi_{os.path.splitext(output_filename)[0]}.pdf",
-                        mime="application/pdf"
-                    )
     
     st.write("---")
     st.subheader("ℹ️ Tentang Sistem Enkripsi File")
@@ -1334,7 +1271,6 @@ def show_main_app():
         if st.button("🚪 Logout"):
             st.session_state.logged_in = False
             st.session_state.username = ""
-            st.session_state.pop('salsa_key', None)  # Hapus kunci saat logout
             st.rerun()
     
     # Tampilkan konten berdasarkan halaman yang dipilih
