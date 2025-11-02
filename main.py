@@ -1115,14 +1115,7 @@ def page_file_encryption():
                     st.error(f"❌ Gagal mengenkripsi file: {error}")
                 else:
                     st.success("✅ File berhasil dienkripsi!")
-                    
-                    # Buat PDF report
-                    pdf_report = create_pdf_report(
-                        original_filename=file_to_encrypt.name,
-                        operation_type="ENKRIPSI",
-                        file_size=f"{file_to_encrypt.size / 1024:.2f} KB",
-                        status="BERHASIL"
-                    )
+                
                     
                     # Download file terenkripsi sebagai PDF
                     original_name = file_to_encrypt.name
@@ -1135,13 +1128,6 @@ def page_file_encryption():
                         mime="application/pdf"
                     )
                     
-                    # Download PDF report
-                    st.download_button(
-                        label="📋 Download Laporan Enkripsi (PDF)",
-                        data=pdf_report,
-                        file_name=f"laporan_enkripsi_{os.path.splitext(original_name)[0]}.pdf",
-                        mime="application/pdf"
-                    )
                     
                     # Info keamanan
                     st.info("""
