@@ -6,6 +6,7 @@ from Halaman.super_enkripsi import page_super_encryption
 from Halaman.enkripsi_file import page_file_encryption
 from Halaman.stegano import page_steganography
 from Halaman.enkripsi_database import page_car_database
+
 # ===== FUNGSI CHACHA20 =====
 
 def hash_password(password):
