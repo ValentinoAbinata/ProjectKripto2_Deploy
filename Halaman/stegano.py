@@ -284,7 +284,7 @@ def decode_image_from_image_adaptive_lsb(stego_image: Image.Image, block_size=8)
         raise ValueError(f"Gagal mengekstrak gambar: {str(e)}")
 def page_steganography():
     st.header("🖼️ Steganografi Adaptive LSB - Sembunyikan Pesan/Gambar dalam Gambar")
-    st.write("Teknik untuk menyembunyikan pesan rahasia atau gambar dalam gambar menggunakan **Adaptive LSB (Least Significant Bit)** yang cerdas")
+    st.write("Teknik untuk menyembunyikan pesan rahasia atau gambar dalam gambar menggunakan **Adaptive LSB (Least Significant Bit)**")
     
     # ===== TAB DEFINITIONS =====
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -297,8 +297,7 @@ def page_steganography():
     # ===== TAB 1: ENCODE TEKS ADAPTIVE LSB =====
     with tab1:
         st.subheader("Sembunyikan Pesan Teks dalam Gambar (Adaptive LSB)")
-        st.info("✨ **Adaptive LSB**: Teknik cerdas yang menyesuaikan jumlah bit LSB berdasarkan kompleksitas gambar!")
-        
+
         uploaded_file = st.file_uploader("Pilih gambar cover:", type=['png', 'jpg', 'jpeg'], key="encode_text_adaptive")
         
         if uploaded_file is not None:
@@ -415,8 +414,6 @@ def page_steganography():
     # ===== TAB 3: ENCODE GAMBAR ADAPTIVE LSB =====
     with tab3:
         st.subheader("Sembunyikan Gambar dalam Gambar (Adaptive LSB)")
-        st.info("✨ **Adaptive LSB**: Menyembunyikan gambar dengan cerdas berdasarkan kompleksitas area!")
-        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -525,31 +522,8 @@ def page_steganography():
                     st.info("💡 Tips: Pastikan ukuran blok decode sama dengan saat encoding")
     
     st.write("---")
-    st.subheader("ℹ️ Tentang Steganografi Adaptive LSB")
+    st.subheader("Adaptive LSB")
     st.write("""
-    **Apa itu Adaptive LSB?**
-    
-    **Adaptive LSB (Least Significant Bit)** adalah teknik steganografi cerdas yang:
-    - **Menyesuaikan jumlah bit** yang digunakan berdasarkan kompleksitas area gambar
-    - **Area kompleks** (tekstur tinggi) menggunakan **3 bit LSB** → lebih banyak data
-    - **Area sedang** menggunakan **2 bit LSB** → keseimbangan
-    - **Area halus** (plain) menggunakan **1 bit LSB** → perubahan minimal
-    
-    **Keunggulan Adaptive LSB:**
-    
-    ✅ **Kapasitas Optimal**: Area kompleks menyimpan lebih banyak data  
-    ✅ **Kualitas Terjaga**: Area halus hampir tidak berubah  
-    ✅ **Sulit Dideteksi**: Pola embedding tidak seragam  
-    ✅ **Robust**: Lebih tahan terhadap analisis statistik  
-    
-    **Perbandingan Metode:**
-    
-    | Metode | Kapasitas | Kualitas | Keamanan |
-    |--------|-----------|----------|----------|
-    | **LSB Standar** | Tetap | Baik | Rendah |
-    | **MSB** | Tetap | Buruk | Sedang |
-    | **Adaptive LSB** | Dinamis | Sangat Baik | Tinggi |
-    
     **Cara Kerja:**
     1. Gambar dibagi menjadi blok-blok kecil
     2. Setiap blok dianalisis kompleksitasnya (varians)

@@ -1,20 +1,12 @@
 import streamlit as st
-import sqlite3
 import hashlib
-import re
-import cv2
-import numpy as np
-from PIL import Image
-import io
-import os
+
 import base64
 import hashlib
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
-from typing import Tuple
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+
 
 # ---------- Encryption / Decryption core ----------
 def encrypt_file(file_bytes: bytes, key: str) -> tuple[bytes, bytes]:
