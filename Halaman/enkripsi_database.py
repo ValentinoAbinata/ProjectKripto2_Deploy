@@ -1,115 +1,9 @@
 import streamlit as st
 import sqlite3
-import hashlib
-import re
-import cv2
-import numpy as np
-from PIL import Image
-import io
-import os
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from Halaman.crypto_utils import encrypt_chacha20, decrypt_chacha20
 import base64
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-import hashlib
-from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import pad, unpad
-from typing import Tuple
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
-import secrets
-
-
-def derive_chacha_key(user_key):
-    """Derive 32-byte key from user input using SHA256"""
-    return hashlib.sha256(user_key.encode()).digest()
-
-def encrypt_chacha20(text, user_key):
-    """Encrypt text using ChaCha20 algorithm with user key"""
-    try:
-        # Derive key from user input
-        key = derive_chacha_key(user_key)
-        
-        # Generate random nonce (16 bytes for ChaCha20)
-        nonce = secrets.token_bytes(16)
-        
-        # Convert text to bytes
-        text_bytes = text.encode('utf-8')
-        
-        # Create ChaCha20 cipher
-        algorithm = algorithms.ChaCha20(key, nonce)
-        cipher = Cipher(algorithm, mode=None, backend=default_backend())
-        encryptor = cipher.encryptor()
-        
-        # Encrypt the text
-        ciphertext = encryptor.update(text_bytes) + encryptor.finalize()
-        
-        # Combine nonce + ciphertext and encode as base64
-        encrypted_data = nonce + ciphertext
-        return base64.b64encode(encrypted_data).decode('utf-8')
-    
-    except Exception as e:
-        st.error(f"Encryption error: {e}")
-        return None
-
-def decrypt_chacha20(encrypted_text, user_key):
-    """Decrypt text using ChaCha20 algorithm with user key - always return result even if wrong key"""
-    try:
-        if not encrypted_text:
-            return "[EMPTY]"
-            
-        # Derive key from user input
-        key = derive_chacha_key(user_key)
-        
-        # Decode from base64
-        try:
-            encrypted_data = base64.b64decode(encrypted_text.encode('utf-8'))
-        except Exception:
-            # Try adding padding if necessary
-            try:
-                padding = 4 - (len(encrypted_text) % 4)
-                if padding != 4:
-                    encrypted_text += "=" * padding
-                encrypted_data = base64.b64decode(encrypted_text.encode('utf-8'))
-            except Exception as e:
-                return f"[BASE64_ERROR: {str(e)}]"
-        
-        # Extract nonce (first 16 bytes) and ciphertext
-        if len(encrypted_data) < 16:
-            return f"[DATA_TOO_SHORT: {len(encrypted_data)} bytes]"
-            
-        nonce = encrypted_data[:16]
-        ciphertext = encrypted_data[16:]
-        
-        # Create ChaCha20 cipher
-        algorithm = algorithms.ChaCha20(key, nonce)
-        cipher = Cipher(algorithm, mode=None, backend=default_backend())
-        decryptor = cipher.decryptor()
-        
-        # Decrypt the text
-        decrypted_bytes = decryptor.update(ciphertext) + decryptor.finalize()
-        
-        # Try to decode as UTF-8
-        try:
-            result = decrypted_bytes.decode('utf-8')
-            # Check if result contains unusual characters that might indicate wrong key
-            if any(ord(c) > 127 for c in result) and len(result) > 0:
-                return f"[POSSIBLE_WRONG_KEY: {result}]"
-            return result
-        except UnicodeDecodeError:
-            # Return raw bytes as string for wrong key
-            return f"[DECODE_ERROR: {decrypted_bytes.hex()[:50]}...]"
-    
-    except Exception as e:
-        return f"[DECRYPTION_ERROR: {str(e)}]"
-
-
 def init_car_db():
-    """Initialize database for cars"""
+    """Initialize database for cars dengan kolom baru"""
     conn = sqlite3.connect('cars.db')
     c = conn.cursor()
     c.execute('''
@@ -117,14 +11,15 @@ def init_car_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             model TEXT NOT NULL,
             brand TEXT NOT NULL,
-            price TEXT NOT NULL
+            price TEXT NOT NULL,
+            dekripsi_mobil TEXT  -- KOLOM BARU
         )
     ''')
     conn.commit()
     conn.close()
 
 def create_car(model, brand, price, encryption_key):
-    """Add new car to database with ChaCha20 encryption using user key"""
+    """Add new car to database dengan kolom dekripsi_mobil"""
     try:
         # Pastikan semua data adalah string sebelum dienkripsi
         model_str = str(model)
@@ -136,15 +31,20 @@ def create_car(model, brand, price, encryption_key):
         encrypted_brand = encrypt_chacha20(brand_str, encryption_key)
         encrypted_price = encrypt_chacha20(price_str, encryption_key)
 
+        # KOLOM BARU: dekripsi_mobil - diisi dengan string kosong dulu
+        encrypted_dekripsi = encrypt_chacha20("", encryption_key)
+
         if not all([encrypted_model, encrypted_brand, encrypted_price]):
             st.error("Gagal mengenkripsi data! Periksa kunci dan data input.")
             return False
             
         conn = sqlite3.connect('cars.db')
         c = conn.cursor()
-        c.execute('INSERT INTO cars (model, brand, price) VALUES (?, ?, ?)', 
-                 (encrypted_model, encrypted_brand, encrypted_price))
+        c.execute('INSERT INTO cars (model, brand, price, dekripsi_mobil) VALUES (?, ?, ?, ?)', 
+                 (encrypted_model, encrypted_brand, encrypted_price, encrypted_dekripsi))
         conn.commit()
+        new_id = c.lastrowid
+        st.session_state['last_inserted_id'] = new_id
         conn.close()
         return True
     except Exception as e:
@@ -152,7 +52,7 @@ def create_car(model, brand, price, encryption_key):
         return False
 
 def read_cars(encryption_key):
-    """Get all cars from database with ChaCha20 decryption - always show results even with wrong key"""
+    """Get all cars from database dengan kolom dekripsi_mobil"""
     try:
         conn = sqlite3.connect('cars.db')
         c = conn.cursor()
@@ -160,33 +60,31 @@ def read_cars(encryption_key):
         encrypted_cars = c.fetchall()
         conn.close()
         
-        # Track if we have any successful decryptions
         successful_decrypts = 0
         total_cars = len(encrypted_cars)
         
         # Decrypt all fields dengan kunci user
         decrypted_cars = []
         for car in encrypted_cars:
-            car_id, encrypted_model, encrypted_brand, encrypted_price = car
+            car_id, encrypted_model, encrypted_brand, encrypted_price, encrypted_dekripsi = car
             
             model = decrypt_chacha20(encrypted_model, encryption_key)
             brand = decrypt_chacha20(encrypted_brand, encryption_key)
             price = decrypt_chacha20(encrypted_price, encryption_key)
+            dekripsi_mobil = decrypt_chacha20(encrypted_dekripsi, encryption_key)
             
-            # Check if any field looks like wrong key (contains error markers)
-            has_errors = any(field.startswith('[') and field.endswith(']') for field in [model, brand, price])
+            # Check if any field looks like wrong key
+            has_errors = any(field.startswith('[') and field.endswith(']') for field in [model, brand, price, dekripsi_mobil])
             
             if not has_errors:
                 successful_decrypts += 1
                 try:
-                    # Try to convert price to float for proper formatting
                     price_float = float(price)
-                    decrypted_cars.append((car_id, model, brand, price_float, True))  # True = successful decrypt
+                    decrypted_cars.append((car_id, model, brand, price_float, dekripsi_mobil, True))
                 except ValueError:
-                    decrypted_cars.append((car_id, model, brand, price, True))
+                    decrypted_cars.append((car_id, model, brand, price, dekripsi_mobil, True))
             else:
-                # Add with error flag
-                decrypted_cars.append((car_id, model, brand, price, False))
+                decrypted_cars.append((car_id, model, brand, price, dekripsi_mobil, False))
                 
         return decrypted_cars, successful_decrypts, total_cars
         
@@ -194,7 +92,55 @@ def read_cars(encryption_key):
         st.error(f"Error membaca data mobil: {e}")
         return [], 0, 0
     
-    
+def update_car_dekripsi(car_data, dekripsi_text, encryption_key):
+    """Update kolom dekripsi_mobil di database.
+    Preferensi: gunakan car_data['id'] jika tersedia. Jika tidak ada, fungsi akan mencari berdasarkan plaintext
+    brand/model/price (asumsi kolom tersebut disimpan plaintext di DB).
+    """
+    conn = None
+    try:
+        # Enkripsi deskripsi (diasumsikan menghasilkan bytes)
+        encrypted_dekripsi = encrypt_chacha20(dekripsi_text, encryption_key)
+
+        # Konversi ke base64 agar aman disimpan di kolom TEXT
+        if isinstance(encrypted_dekripsi, (bytes, bytearray)):
+            encrypted_b64 = base64.b64encode(encrypted_dekripsi).decode('utf-8')
+        else:
+            # jika fungsi enkripsi sudah mengembalikan string
+            encrypted_b64 = str(encrypted_dekripsi)
+
+        conn = sqlite3.connect('cars.db', timeout=10)
+        c = conn.cursor()
+
+        # 1) Jika ada id, gunakan id -> paling andal
+        if 'id' in car_data and car_data['id'] is not None:
+            c.execute('UPDATE cars SET dekripsi_mobil = ? WHERE id = ?', (encrypted_b64, car_data['id']))
+            conn.commit()
+            return c.rowcount > 0
+
+        # 2) Jika tidak ada id, cari berdasarkan plaintext (hanya works jika DB menyimpan plaintext)
+        c.execute('SELECT id FROM cars WHERE brand = ? AND model = ? AND price = ?', (
+            car_data.get('brand'),
+            car_data.get('model'),
+            car_data.get('price')
+        ))
+        row = c.fetchone()
+        if not row:
+            return False
+
+        car_id = row[0]
+        c.execute('UPDATE cars SET dekripsi_mobil = ? WHERE id = ?', (encrypted_b64, car_id))
+        conn.commit()
+        return c.rowcount > 0
+
+    except Exception as e:
+        st.error(f"Error update deskripsi: {e}")
+        return False
+
+    finally:
+        if conn:
+            conn.close()
+        
 def delete_car(car_id):
     """Delete car from database"""
     try:
@@ -270,7 +216,7 @@ def page_car_database():
             
             with col2:
                 price = st.number_input("Harga Mobil (Rp)", min_value=0, step=1000000, 
-                                      format="%d", value=100000000)
+                                    format="%d", value=100000000)
             
             submit_button = st.form_submit_button("💾 Simpan Mobil (Terenkripsi)")
             
@@ -282,61 +228,55 @@ def page_car_database():
                 else:
                     if create_car(model, brand, price, encryption_key):
                         st.success(f"✅ Mobil {brand} {model} berhasil ditambahkan dengan enkripsi!")
-                        
-                        # Tampilkan perbandingan enkripsi
-                        with st.expander("🔍 Lihat Detail Enkripsi"):
-                            st.write("**Data sebelum enkripsi:**")
-                            st.code(f"Brand: {brand}\nModel: {model}\nHarga: Rp {price:,}")
-                            
-                            enc_brand = encrypt_chacha20(brand, encryption_key)
-                            enc_model = encrypt_chacha20(model, encryption_key)
-                            enc_price = encrypt_chacha20(str(price), encryption_key)
-                            
-                            st.write("**Data setelah enkripsi (disimpan di database):**")
-                            st.code(f"Brand: {enc_brand}\nModel: {enc_model}\nHarga: {enc_price}")
+                        new_id = st.session_state.pop('last_inserted_id', None)
+                        # AUTO REDIRECT KE SUPER ENCRYPTION
+                        st.session_state.current_page = "Super Encryption"
+                        st.session_state.new_car_data = {
+                            'id': new_id,
+                            'brand': brand,
+                            'model': model, 
+                            'price': price,
+                            'encryption_key': encryption_key
+                        }
+                        st.rerun()
                     else:
                         st.error("❌ Gagal menambahkan mobil!")
     
     with tab2:
         st.subheader("Daftar Mobil (Hasil Dekripsi)")
         
-        # Dapatkan data mobil
         cars, successful_decrypts, total_cars = read_cars(encryption_key)
         
-        # Tampilkan status dekripsi
         if total_cars > 0:
             if successful_decrypts == total_cars:
                 st.success(f"✅ Semua {total_cars} mobil berhasil didekripsi dengan kunci ini!")
             elif successful_decrypts > 0:
-                st.warning(f"⚠️ {successful_decrypts} dari {total_cars} mobil berhasil didekripsi. Beberapa data mungkin menggunakan kunci berbeda.")
+                st.warning(f"⚠️ {successful_decrypts} dari {total_cars} mobil berhasil didekripsi.")
             else:
-                st.error(f"❌ Tidak ada data yang berhasil didekripsi dengan kunci ini. Kemungkinan kunci salah!")
+                st.error(f"❌ Tidak ada data yang berhasil didekripsi dengan kunci ini.")
         
         if not cars:
-            st.info("📝 Belum ada data mobil. Silakan tambah mobil baru di tab 'Tambah Mobil'.")
+            st.info("📝 Belum ada data mobil.")
         else:
             st.write(f"**Menampilkan {len(cars)} mobil:**")
             
             for car in cars:
-                car_id, model, brand, price, decrypt_success = car
+                car_id, model, brand, price, dekripsi_mobil, decrypt_success = car
                 
                 with st.container():
-                    # Tampilkan border warna berdasarkan status dekripsi
                     if decrypt_success:
                         st.markdown(f'<div style="border-left: 4px solid #00ff00; padding-left: 10px;">', unsafe_allow_html=True)
                     else:
                         st.markdown(f'<div style="border-left: 4px solid #ff0000; padding-left: 10px;">', unsafe_allow_html=True)
                     
-                    col1, col2, col3 = st.columns([3, 2, 1])
+                    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
                     
                     with col1:
                         if decrypt_success:
-                            st.write(f"**Brand:{brand} \t Model:{model}**")
+                            st.write(f"**{brand} {model}**")
                         else:
                             st.write(f"~~{brand} {model}~~")
                         st.caption(f"ID: {car_id}")
-                        if not decrypt_success:
-                            st.error("⚠️ Gagal dekripsi - kunci mungkin salah")
                     
                     with col2:
                         if isinstance(price, (int, float)):
@@ -345,19 +285,20 @@ def page_car_database():
                             st.write(f"**Harga:** {price}")
                     
                     with col3:
-                        if st.button(f"🗑️ Hapus", key=f"delete_{car_id}"):
-                            if delete_car(car_id) & decrypt_success:
-                                st.success(f"✅ Data mobil berhasil dihapus!")
+                        st.write("**Dekripsi Mobil:**")
+                        if dekripsi_mobil and dekripsi_mobil != "[EMPTY]":
+                            st.code(dekripsi_mobil[:50] + "..." if len(dekripsi_mobil) > 50 else dekripsi_mobil)
+                        else:
+                            st.info("Belum diisi")
+                    
+                    with col4:
+                        if st.button(f"🗑️", key=f"delete_{car_id}"):
+                            if delete_car(car_id):
+                                st.success("✅ Data dihapus!")
                                 st.rerun()
-                            else:
-                                st.error("❌ Gagal menghapus mobil!")
                     
                     st.markdown('</div>', unsafe_allow_html=True)
                     st.divider()
-        
-        # Tampilkan data terenkripsi jika diminta
-        if show_encrypted:
-            display_encrypted_data()
 
 def display_encrypted_data():
     """Display raw encrypted data from database"""

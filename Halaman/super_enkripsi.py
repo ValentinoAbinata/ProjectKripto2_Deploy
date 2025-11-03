@@ -1,28 +1,6 @@
 import streamlit as st
-import sqlite3
-import hashlib
-import re
-import cv2
-import numpy as np
-from PIL import Image
-import io
-import os
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-import hashlib
-from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import pad, unpad
-from typing import Tuple
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
-import secrets
-
+from Halaman.crypto_utils import super_encrypt, super_decrypt
+from Halaman.enkripsi_database import update_car_dekripsi
 
 def caesar_cipher(text, shift):
     result = ""
@@ -76,30 +54,61 @@ def page_super_encryption():
     st.header("🔐 Super Enkripsi - Caesar + XOR")
     st.write("Tool untuk enkripsi dan dekripsi menggunakan kombinasi Caesar Cipher dan XOR Cipher")
     
+    # ===== BAGIAN BARU: DEKRIPSI MOBIL =====
+    if 'new_car_data' in st.session_state:
+        st.success("🚗 Mobil baru berhasil ditambahkan! Sekarang isi deskripsi mobil:")
+        
+        car_data = st.session_state.new_car_data
+        st.info(f"**Data Mobil:**{car_data['id']} {car_data['brand']} {car_data['model']} - Rp {car_data['price']:,}")
+        
+        with st.form("dekripsi_mobil_form"):
+            deskripsi_text = st.text_area(
+                "Deskripsi Mobil:", 
+                placeholder="Masukkan deskripsi lengkap mobil...",
+                help="Deskripsi ini akan dienkripsi dengan Super Encryption dan disimpan di database"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                caesar_key_desc = st.number_input(
+                    "Kunci Caesar untuk Deskripsi:", 
+                    min_value=-100, max_value=100, value=3,
+                    key="caesar_desc"
+                )
+            with col2:
+                xor_key_desc = st.text_input(
+                    "Kunci XOR untuk Deskripsi:", 
+                    value="mobil123",
+                    key="xor_desc"
+                )
+            
+            submit_desc = st.form_submit_button("💾 Simpan Deskripsi Mobil")
+            
+            if submit_desc and deskripsi_text:
+                # Enkripsi deskripsi dengan Super Encryption
+                caesar_result, final_result, ascii_values = super_encrypt(deskripsi_text, caesar_key_desc, xor_key_desc)
+                
+                # Simpan ke database (update kolom dekripsi_mobil)
+                if update_car_dekripsi(car_data, final_result, car_data['encryption_key']):
+                    st.success("✅ Deskripsi mobil berhasil disimpan dengan Super Encryption!")
+                    # Hapus session state
+                    del st.session_state.new_car_data
+                    st.rerun()
+                else:
+                    st.error("❌ Gagal menyimpan deskripsi mobil!")
+    
+    # ===== BAGIAN ASLI SUPER ENCRYPTION =====
+    st.write("---")
     mode = st.radio("Pilih Mode:", ["Enkripsi", "Dekripsi"])
     text_input = st.text_area("Masukkan teks:")
     
     col1, col2 = st.columns(2)
-    
     with col1:
-        caesar_key = st.number_input(
-            "Kunci Caesar:", 
-            min_value=-100, 
-            max_value=100, 
-            value=1,
-            help="Range kunci: -100 sampai 100"
-        )
-    
+        caesar_key = st.number_input("Kunci Caesar:", min_value=-100, max_value=100, value=1)
     with col2:
-        xor_key = st.text_input(
-            "Kunci XOR:", 
-            value="secret",
-            help="Kunci berupa string"
-        )
+        xor_key = st.text_input("Kunci XOR:", value="secret")
     
-    # Checkbox untuk menampilkan detail ASCII
-    show_ascii = st.checkbox("📊 Tampilkan Detail ASCII", value=True,
-                           help="Tampilkan representasi ASCII dari setiap step")
+    show_ascii = st.checkbox("📊 Tampilkan Detail ASCII", value=True)
     
     if st.button(f"🚀 Jalankan {mode}"):
         if not text_input:
