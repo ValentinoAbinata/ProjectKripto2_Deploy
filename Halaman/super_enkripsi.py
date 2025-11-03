@@ -59,7 +59,7 @@ def page_super_encryption():
         st.success("🚗 Mobil baru berhasil ditambahkan! Sekarang isi deskripsi mobil:")
         
         car_data = st.session_state.new_car_data
-        st.info(f"**Data Mobil:** {car_data['brand']} {car_data['model']} - Rp {car_data['price']:,}")
+        st.info(f"**Data Mobil:**{car_data['id']} {car_data['brand']} {car_data['model']} - Rp {car_data['price']:,}")
         
         with st.form("dekripsi_mobil_form"):
             deskripsi_text = st.text_area(

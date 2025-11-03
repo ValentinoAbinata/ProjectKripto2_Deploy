@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 from Halaman.crypto_utils import encrypt_chacha20, decrypt_chacha20
-
+import base64
 def init_car_db():
     """Initialize database for cars dengan kolom baru"""
     conn = sqlite3.connect('cars.db')
@@ -43,6 +43,8 @@ def create_car(model, brand, price, encryption_key):
         c.execute('INSERT INTO cars (model, brand, price, dekripsi_mobil) VALUES (?, ?, ?, ?)', 
                  (encrypted_model, encrypted_brand, encrypted_price, encrypted_dekripsi))
         conn.commit()
+        new_id = c.lastrowid
+        st.session_state['last_inserted_id'] = new_id
         conn.close()
         return True
     except Exception as e:
@@ -91,42 +93,54 @@ def read_cars(encryption_key):
         return [], 0, 0
     
 def update_car_dekripsi(car_data, dekripsi_text, encryption_key):
-    """Update kolom dekripsi_mobil di database"""
+    """Update kolom dekripsi_mobil di database.
+    Preferensi: gunakan car_data['id'] jika tersedia. Jika tidak ada, fungsi akan mencari berdasarkan plaintext
+    brand/model/price (asumsi kolom tersebut disimpan plaintext di DB).
+    """
+    conn = None
     try:
-        # Encrypt dekripsi_text dengan ChaCha20
+        # Enkripsi deskripsi (diasumsikan menghasilkan bytes)
         encrypted_dekripsi = encrypt_chacha20(dekripsi_text, encryption_key)
-        
-        conn = sqlite3.connect('cars.db')
-        c = conn.cursor()
-        
-        # Cari mobil berdasarkan brand, model, price
-        c.execute('''
-            SELECT id FROM cars 
-            WHERE brand = ? AND model = ? AND price = ?
-        ''', (
-            encrypt_chacha20(car_data['brand'], encryption_key),
-            encrypt_chacha20(car_data['model'], encryption_key), 
-            encrypt_chacha20(str(car_data['price']), encryption_key)
-        ))
-        
-        result = c.fetchone()
-        if result:
-            car_id = result[0]
-            # Update kolom dekripsi_mobil
-            c.execute('''
-                UPDATE cars SET dekripsi_mobil = ? WHERE id = ?
-            ''', (encrypted_dekripsi, car_id))
-            conn.commit()
-            conn.close()
-            return True
+
+        # Konversi ke base64 agar aman disimpan di kolom TEXT
+        if isinstance(encrypted_dekripsi, (bytes, bytearray)):
+            encrypted_b64 = base64.b64encode(encrypted_dekripsi).decode('utf-8')
         else:
-            conn.close()
+            # jika fungsi enkripsi sudah mengembalikan string
+            encrypted_b64 = str(encrypted_dekripsi)
+
+        conn = sqlite3.connect('cars.db', timeout=10)
+        c = conn.cursor()
+
+        # 1) Jika ada id, gunakan id -> paling andal
+        if 'id' in car_data and car_data['id'] is not None:
+            c.execute('UPDATE cars SET dekripsi_mobil = ? WHERE id = ?', (encrypted_b64, car_data['id']))
+            conn.commit()
+            return c.rowcount > 0
+
+        # 2) Jika tidak ada id, cari berdasarkan plaintext (hanya works jika DB menyimpan plaintext)
+        c.execute('SELECT id FROM cars WHERE brand = ? AND model = ? AND price = ?', (
+            car_data.get('brand'),
+            car_data.get('model'),
+            car_data.get('price')
+        ))
+        row = c.fetchone()
+        if not row:
             return False
-            
+
+        car_id = row[0]
+        c.execute('UPDATE cars SET dekripsi_mobil = ? WHERE id = ?', (encrypted_b64, car_id))
+        conn.commit()
+        return c.rowcount > 0
+
     except Exception as e:
         st.error(f"Error update deskripsi: {e}")
         return False
-    
+
+    finally:
+        if conn:
+            conn.close()
+        
 def delete_car(car_id):
     """Delete car from database"""
     try:
@@ -214,10 +228,11 @@ def page_car_database():
                 else:
                     if create_car(model, brand, price, encryption_key):
                         st.success(f"✅ Mobil {brand} {model} berhasil ditambahkan dengan enkripsi!")
-                        
+                        new_id = st.session_state.pop('last_inserted_id', None)
                         # AUTO REDIRECT KE SUPER ENCRYPTION
                         st.session_state.current_page = "Super Encryption"
                         st.session_state.new_car_data = {
+                            'id': new_id,
                             'brand': brand,
                             'model': model, 
                             'price': price,
