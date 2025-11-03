@@ -1,27 +1,7 @@
 import streamlit as st
-import sqlite3
-import hashlib
-import re
-import cv2
 import numpy as np
 from PIL import Image
 import io
-import os
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-import hashlib
-from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import pad, unpad
-from typing import Tuple
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
-import secrets
 
 def text_to_binary(text):
     """Convert text to binary string"""
@@ -36,8 +16,8 @@ def binary_to_text(binary):
         text += chr(int(byte, 2))
     return text
 
-def encode_image(image, message):
-    """Encode message into image using LSB steganography"""
+def encode_image_msb(image, message):
+    """Encode message into image using MSB steganography"""
     img_array = np.array(image)
     binary_message = text_to_binary(message) + '1111111111111110'
     
@@ -50,19 +30,21 @@ def encode_image(image, message):
     
     for i in range(len(binary_message)):
         if i < len(flat):
-            flat[i] = (flat[i] & 0xFE) | int(binary_message[i])
+            # MSB: Clear the MOST significant bit and set it to our message bit
+            flat[i] = (flat[i] & 0x7F) | (int(binary_message[i]) << 7)
     
     encoded_array = flat.reshape(img_array.shape)
     return Image.fromarray(encoded_array.astype('uint8'))
 
-def decode_image(image):
-    """Decode message from image using LSB steganography"""
+def decode_image_msb(image):
+    """Decode message from image using MSB steganography"""
     img_array = np.array(image)
     flat = img_array.flatten()
     
     binary_message = ''
     for pixel in flat:
-        binary_message += str(pixel & 1)
+        # MSB: Extract the MOST significant bit (bit ke-7)
+        binary_message += str((pixel >> 7) & 1)
     
     end_index = binary_message.find('1111111111111110')
     if end_index != -1:
@@ -74,117 +56,123 @@ def decode_image(image):
     except:
         return "Tidak dapat mendekode pesan. Mungkin gambar tidak mengandung pesan tersembunyi."
 
+def encode_image_in_image_msb(host_image: Image.Image, secret_image: Image.Image) -> Image.Image:
+    """Encode secret image into host image using MSB"""
+    if not isinstance(host_image, Image.Image) or not isinstance(secret_image, Image.Image):
+        raise ValueError("Input harus berupa objek PIL Image")
+        
+    host_image = host_image.convert('RGB')
+    secret_image = secret_image.convert('RGB')
+    
+    host_arr = np.array(host_image, dtype=np.uint8)
+    secret_arr = np.array(secret_image, dtype=np.uint8)
+    
+    # Resize secret image to fit in host image's MSB capacity
+    max_bytes = (host_arr.size * 1) // 8  # 1 bit per byte untuk MSB
+    if secret_arr.size > max_bytes * 8:
+        raise ValueError("Gambar rahasia terlalu besar untuk disembunyikan dalam gambar host")
+    
+    new_height = int(np.sqrt(max_bytes / 3))
+    new_width = new_height
+    secret_img = secret_image.resize((new_width, new_height))
+    secret_arr = np.array(secret_img, dtype=np.uint8)
+    
+    # Simpan dimensi asli untuk decoding
+    width, height = secret_arr.shape[:2]
+    dimension_bits = format(width, '016b') + format(height, '016b')
+    
+    # Konversi secret image ke binary string
+    binary_secret = dimension_bits + ''.join([format(pixel, '08b') for pixel in secret_arr.flatten()])
+    
+    # Modify MSB dari host image
+    host_flat = host_arr.flatten()
+    for i in range(len(binary_secret)):
+        if i < len(host_flat):
+            # MSB: Clear bit ke-7 dan set ke bit pesan kita
+            host_flat[i] = (host_flat[i] & 0x7F) | (int(binary_secret[i]) << 7)
+            
+    # Reshape kembali ke dimensi asli
+    stego_arr = host_flat.reshape(host_arr.shape)
+    return Image.fromarray(stego_arr)
+
+def decode_image_from_image_msb(stego_image: Image.Image) -> Image.Image:
+    """Decode secret image from host image using MSB"""
+    if not isinstance(stego_image, Image.Image):
+        raise ValueError("Input harus berupa objek PIL Image")
+        
+    stego_image = stego_image.convert('RGB')
+    stego_arr = np.array(stego_image)
+    
+    # Ekstrak MSB (bit ke-7)
+    binary_data = ''.join([format((pixel >> 7) & 1, '01b') for pixel in stego_arr.flatten()])
+    
+    # Ekstrak dimensi original
+    width = int(binary_data[:16], 2)
+    height = int(binary_data[16:32], 2)
+    binary_secret = binary_data[32:]
+    
+    # Validasi dimensi
+    if width <= 0 or height <= 0:
+        raise ValueError("Dimensi tidak valid dalam data tersembunyi")
+    
+    # Konversi binary ke pixels
+    secret_pixels = []
+    for i in range(0, len(binary_secret), 8):
+        if i + 8 <= len(binary_secret):
+            pixel = int(binary_secret[i:i+8], 2)
+            secret_pixels.append(pixel)
+    
+    # Buat array dengan dimensi yang benar
+    try:
+        secret_arr = np.array(secret_pixels[:width*height*3], dtype=np.uint8)
+        secret_arr = secret_arr.reshape((height, width, 3))  # Perbaikan: height dulu, baru width
+        return Image.fromarray(secret_arr)
+    except ValueError as e:
+        raise ValueError(f"Gagal mengekstrak gambar: {str(e)}")
 
 def page_steganography():
-    st.header("🖼️ Steganografi - Sembunyikan Pesan/Gambar dalam Gambar")
-    st.write("Teknik untuk menyembunyikan pesan rahasia atau gambar dalam gambar tanpa mengubah penampilan visual")
+    st.header("🖼️ Steganografi MSB - Sembunyikan Pesan/Gambar dalam Gambar")
+    st.write("Teknik untuk menyembunyikan pesan rahasia atau gambar dalam gambar menggunakan **MSB (Most Significant Bit)**")
     
-    # ===== FUNGSI BARU UNTUK GAMBAR DALAM GAMBAR =====
-    
-    def encode_image_in_image(host_image: Image.Image, secret_image: Image.Image) -> Image.Image:
-
-        if not isinstance(host_image, Image.Image) or not isinstance(secret_image, Image.Image):
-            raise ValueError("Input harus berupa objek PIL Image")
-            
-        host_image = host_image.convert('RGB')
-        secret_image = secret_image.convert('RGB')
-        
-        host_arr = np.array(host_image, dtype=np.uint8)
-        secret_arr = np.array(secret_image, dtype=np.uint8)
-        
-        max_bytes = (host_arr.size * 1) // 8  # 1 bit per byte
-        if secret_arr.size > max_bytes * 8:
-            raise ValueError("Gambar rahasia terlalu besar untuk disembunyikan dalam gambar host")
-        
-        new_height = int(np.sqrt(max_bytes / 3))  # 3 untuk RGB channels
-        new_width = new_height
-        secret_img = secret_image.resize((new_width, new_height))
-        secret_arr = np.array(secret_img, dtype=np.uint8)
-        
-        # Simpan dimensi asli untuk decoding
-        width, height = secret_arr.shape[:2]
-        dimension_bits = format(width, '016b') + format(height, '016b')
-        
-        # Konversi secret image ke binary string
-        binary_secret = dimension_bits + ''.join([format(pixel, '08b') for pixel in secret_arr.flatten()])
-        
-        # Modify LSB dari host image
-        host_flat = host_arr.flatten()
-        for i in range(len(binary_secret)):
-            if i < len(host_flat):
-                host_flat[i] = (host_flat[i] & 254) | int(binary_secret[i])
-                
-        # Reshape kembali ke dimensi asli
-        stego_arr = host_flat.reshape(host_arr.shape)
-        return Image.fromarray(stego_arr)
-    def decode_image_from_image(stego_image: Image.Image) -> Image.Image:
-        # Validasi input
-        if not isinstance(stego_image, Image.Image):
-            raise ValueError("Input harus berupa objek PIL Image")
-            
-        # Konversi ke RGB jika belum
-        stego_image = stego_image.convert('RGB')
-        stego_arr = np.array(stego_image)
-        
-        # Ekstrak LSB
-        binary_data = ''.join([format(pixel & 1, '01b') for pixel in stego_arr.flatten()])
-        
-        # Ekstrak dimensi original
-        width = int(binary_data[:16], 2)
-        height = int(binary_data[16:32], 2)
-        binary_secret = binary_data[32:]
-        
-        # Validasi dimensi
-        if width <= 0 or height <= 0:
-            raise ValueError("Dimensi tidak valid dalam data tersembunyi")
-        
-        # Konversi binary ke pixels
-        secret_pixels = []
-        for i in range(0, len(binary_secret), 8):
-            if i + 8 <= len(binary_secret):
-                pixel = int(binary_secret[i:i+8], 2)
-                secret_pixels.append(pixel)
-        
-        # Buat array dengan dimensi yang benar
-        try:
-            secret_arr = np.array(secret_pixels[:width*height*3], dtype=np.uint8)
-            secret_arr = secret_arr.reshape((width, height, 3))
-            return Image.fromarray(secret_arr)
-        except ValueError as e:
-            raise ValueError(f"Gagal mengekstrak gambar: {str(e)}")
     # ===== TAB DEFINITIONS =====
     
-    tab1, tab2, tab3, tab4 = st.tabs(["🔒 Encode Pesan", "🔓 Decode Pesan", "🖼️ Encode Gambar", "🔍 Decode Gambar"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔒 Encode Pesan MSB", "🔓 Decode Pesan MSB", "🖼️ Encode Gambar MSB", "🔍 Decode Gambar MSB"])
     
-    # ===== TAB 1: ENCODE TEKS =====
+    # ===== TAB 1: ENCODE TEKS MSB =====
     with tab1:
-        st.subheader("Sembunyikan Pesan Teks dalam Gambar")
+        st.subheader("Sembunyikan Pesan Teks dalam Gambar (MSB)")
+        st.warning("⚠️ **MSB Warning**: Menggunakan MSB akan menyebabkan perubahan yang lebih terlihat pada gambar dibanding LSB!")
         
-        uploaded_file = st.file_uploader("Pilih gambar cover:", type=['png', 'jpg', 'jpeg'], key="encode_text")
+        uploaded_file = st.file_uploader("Pilih gambar cover:", type=['png', 'jpg', 'jpeg'], key="encode_text_msb")
         
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
             st.image(image, caption="Gambar Cover", use_container_width=True)
             
-            secret_message = st.text_area("Pesan rahasia yang akan disembunyikan:", key="text_secret")
+            secret_message = st.text_area("Pesan rahasia yang akan disembunyikan:", key="text_secret_msb")
             
-            if st.button("🔄 Encode Pesan ke Gambar", key="btn_encode_text"):
+            if st.button("🔄 Encode Pesan ke Gambar (MSB)", key="btn_encode_text_msb"):
                 if secret_message:
                     try:
-                        encoded_image = encode_image(image, secret_message)
+                        encoded_image = encode_image_msb(image, secret_message)
                         
-                        st.image(encoded_image, caption="Gambar dengan Pesan Tersembunyi", use_container_width=True)
+                        # Tampilkan perbandingan
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.image(image, caption="Gambar Asli", use_container_width=True)
+                        with col2:
+                            st.image(encoded_image, caption="Gambar dengan MSB", use_container_width=True)
                         
                         buf = io.BytesIO()
                         encoded_image.save(buf, format='PNG')
                         st.download_button(
-                            label="📥 Download Gambar dengan Pesan Tersembunyi",
+                            label="📥 Download Gambar dengan Pesan Tersembunyi (MSB)",
                             data=buf.getvalue(),
-                            file_name="encoded_image.png",
+                            file_name="msb_encoded_image.png",
                             mime="image/png"
                         )
                         
-                        st.success("✅ Pesan berhasil disembunyikan dalam gambar!")
+                        st.success("✅ Pesan berhasil disembunyikan dalam gambar menggunakan MSB!")
                         
                     except ValueError as e:
                         st.error(f"❌ {e}")
@@ -193,22 +181,22 @@ def page_steganography():
                 else:
                     st.warning("⚠️ Masukkan pesan terlebih dahulu!")
     
-    # ===== TAB 2: DECODE TEKS =====
+    # ===== TAB 2: DECODE TEKS MSB =====
     with tab2:
-        st.subheader("Baca Pesan Teks dari Gambar")
+        st.subheader("Baca Pesan Teks dari Gambar (MSB)")
         
-        encoded_file = st.file_uploader("Pilih gambar dengan pesan tersembunyi:", type=['png', 'jpg', 'jpeg'], key="decode_text")
+        encoded_file = st.file_uploader("Pilih gambar dengan pesan tersembunyi (MSB):", type=['png', 'jpg', 'jpeg'], key="decode_text_msb")
         
         if encoded_file is not None:
             image = Image.open(encoded_file)
-            st.image(image, caption="Gambar dengan Pesan Tersembunyi", use_container_width=True)
+            st.image(image, caption="Gambar dengan Pesan Tersembunyi (MSB)", use_container_width=True)
             
-            if st.button("🔍 Decode Pesan dari Gambar", key="btn_decode_text"):
+            if st.button("🔍 Decode Pesan dari Gambar (MSB)", key="btn_decode_text_msb"):
                 try:
-                    decoded_message = decode_image(image)
+                    decoded_message = decode_image_msb(image)
                     
                     st.subheader("📜 Pesan yang Ditemukan:")
-                    st.text_area("Pesan rahasia:", value=decoded_message, height=150, key="decoded_text_area")
+                    st.text_area("Pesan rahasia:", value=decoded_message, height=150, key="decoded_text_area_msb")
                     
                     if decoded_message.startswith("Tidak dapat"):
                         st.warning("⚠️ " + decoded_message)
@@ -218,19 +206,20 @@ def page_steganography():
                 except Exception as e:
                     st.error(f"❌ Terjadi error: {e}")
     
-    # ===== TAB 3: ENCODE GAMBAR =====
+    # ===== TAB 3: ENCODE GAMBAR MSB =====
     with tab3:
-        st.subheader("Sembunyikan Gambar dalam Gambar")
+        st.subheader("Sembunyikan Gambar dalam Gambar (MSB)")
+        st.warning("⚠️ **MSB Warning**: Gambar hasil akan terlihat sangat berbeda dari aslinya!")
         
         col1, col2 = st.columns(2)
         
         with col1:
             st.write("**Gambar Cover** (gambar yang akan dilihat)")
-            cover_image = st.file_uploader("Pilih gambar cover:", type=['png', 'jpg', 'jpeg'], key="cover_img")
+            cover_image = st.file_uploader("Pilih gambar cover:", type=['png', 'jpg', 'jpeg'], key="cover_img_msb")
             
         with col2:
             st.write("**Gambar Rahasia** (gambar yang akan disembunyikan)")
-            secret_image = st.file_uploader("Pilih gambar rahasia:", type=['png', 'jpg', 'jpeg'], key="secret_img")
+            secret_image = st.file_uploader("Pilih gambar rahasia:", type=['png', 'jpg', 'jpeg'], key="secret_img_msb")
         
         if cover_image and secret_image:
             # Display both images
@@ -246,52 +235,52 @@ def page_steganography():
                 st.image(secret_img, caption="Gambar Rahasia", use_container_width=True)
                 st.write(f"Ukuran: {secret_img.size[0]} x {secret_img.size[1]}")
             
-            # Check if secret image is smaller than cover image
-            if secret_img.size[0] > cover_img.size[0] or secret_img.size[1] > cover_img.size[1]:
-                st.error("❌ Gambar rahasia harus lebih kecil dari gambar cover!")
-            else:
-                if st.button("🖼️ Sembunyikan Gambar", key="btn_encode_img"):
-                    try:
-                        with st.spinner("🔄 Menyembunyikan gambar..."):
-                            # Encode secret image into cover image
-                            result_image = encode_image_in_image(cover_img, secret_img)
-                            
-                            st.success("✅ Gambar berhasil disembunyikan!")
-                            
-                            # Display result
-                            st.image(result_image, caption="Gambar dengan Gambar Tersembunyi", use_container_width=True)
-                            
-                            # Download button
-                            buf = io.BytesIO()
-                            result_image.save(buf, format='PNG')
-                            st.download_button(
-                                label="📥 Download Gambar dengan Gambar Tersembunyi",
-                                data=buf.getvalue(),
-                                file_name="image_in_image.png",
-                                mime="image/png"
-                            )
-                            
-                    except Exception as e:
-                        st.error(f"❌ Terjadi error: {e}")
+            if st.button("🖼️ Sembunyikan Gambar (MSB)", key="btn_encode_img_msb"):
+                try:
+                    with st.spinner("🔄 Menyembunyikan gambar menggunakan MSB..."):
+                        # Encode secret image into cover image using MSB
+                        result_image = encode_image_in_image_msb(cover_img, secret_img)
+                        
+                        st.success("✅ Gambar berhasil disembunyikan menggunakan MSB!")
+                        
+                        # Display comparison
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.image(cover_img, caption="Gambar Cover Asli", use_container_width=True)
+                        with col2:
+                            st.image(result_image, caption="Gambar dengan MSB", use_container_width=True)
+                        
+                        # Download button
+                        buf = io.BytesIO()
+                        result_image.save(buf, format='PNG')
+                        st.download_button(
+                            label="📥 Download Gambar dengan Gambar Tersembunyi (MSB)",
+                            data=buf.getvalue(),
+                            file_name="msb_image_in_image.png",
+                            mime="image/png"
+                        )
+                        
+                except Exception as e:
+                    st.error(f"❌ Terjadi error: {e}")
     
-    # ===== TAB 4: DECODE GAMBAR =====
+    # ===== TAB 4: DECODE GAMBAR MSB =====
     with tab4:
-        st.subheader("Ekstrak Gambar dari Gambar")
+        st.subheader("Ekstrak Gambar dari Gambar (MSB)")
         
-        st.write("Upload gambar yang berisi gambar tersembunyi:")
-        encoded_image_file = st.file_uploader("Pilih gambar encoded:", type=['png', 'jpg', 'jpeg'], key="decode_img")
+        st.write("Upload gambar yang berisi gambar tersembunyi (MSB):")
+        encoded_image_file = st.file_uploader("Pilih gambar encoded:", type=['png', 'jpg', 'jpeg'], key="decode_img_msb")
         
         if encoded_image_file is not None:
             encoded_img = Image.open(encoded_image_file)
-            st.image(encoded_img, caption="Gambar Encoded", use_container_width=True)
+            st.image(encoded_img, caption="Gambar Encoded (MSB)", use_container_width=True)
             
-            if st.button("🔍 Ekstrak Gambar Rahasia", key="btn_decode_img"):
+            if st.button("🔍 Ekstrak Gambar Rahasia (MSB)", key="btn_decode_img_msb"):
                 try:
-                    with st.spinner("🔄 Mengekstrak gambar rahasia..."):
-                        # Decode secret image from cover image
-                        secret_img_extracted = decode_image_from_image(encoded_img)
+                    with st.spinner("🔄 Mengekstrak gambar rahasia dari MSB..."):
+                        # Decode secret image from cover image using MSB
+                        secret_img_extracted = decode_image_from_image_msb(encoded_img)
                         
-                        st.success("✅ Gambar rahasia berhasil diekstrak!")
+                        st.success("✅ Gambar rahasia berhasil diekstrak dari MSB!")
                         
                         # Display extracted image
                         st.image(secret_img_extracted, caption="Gambar Rahasia yang Ditemukan", use_container_width=True)
@@ -302,20 +291,34 @@ def page_steganography():
                         st.download_button(
                             label="📥 Download Gambar Rahasia",
                             data=buf.getvalue(),
-                            file_name="extracted_secret_image.png",
+                            file_name="extracted_secret_image_msb.png",
                             mime="image/png"
                         )
                         
                 except Exception as e:
                     st.error(f"❌ Terjadi error: {e}")
-                    st.error("Mungkin gambar tidak mengandung gambar tersembunyi.")
+                    st.error("Mungkin gambar tidak mengandung gambar tersembunyi atau menggunakan metode LSB.")
     
     st.write("---")
-    st.subheader("ℹ️ Tentang Steganografi")
+    st.subheader("ℹ️ Tentang Steganografi MSB")
     st.write("""
-    **Cara Kerja LSB (Least Significant Bit):**
-    - Setiap pixel gambar terdiri dari 3 warna (Red, Green, Blue)
-    - Setiap warna diwakili oleh angka 0-255 (8 bit)
-    - Teknik LSB mengganti bit terakhir setiap warna dengan bit data rahasia
-    - Perubahan ini tidak terlihat oleh mata manusia
+    **Perbedaan LSB vs MSB:**
+    
+    **LSB (Least Significant Bit):**
+    - Mengubah bit **terakhir** (paling tidak signifikan) setiap warna
+    - Perubahan hampir tidak terlihat oleh mata manusia
+    - Kualitas gambar tetap baik
+    - Lebih mudah rusak jika gambar dikompresi
+    
+    **MSB (Most Significant Bit):**
+    - Mengubah bit **pertama** (paling signifikan) setiap warna
+    - Perubahan sangat terlihat, gambar terlihat seperti posterized
+    - Kualitas gambar menurun drastis
+    - Lebih robust terhadap kompresi
+    - Kapasitas penyimpanan sama dengan LSB
+    
+    **Visual Effect MSB:**
+    - Gambar akan terlihat seperti memiliki hanya 128 warna per channel
+    - Efek seperti "posterization" atau "color banding"
+    - Cocok untuk aplikasi yang tidak memerlukan kerahasiaan visual
     """)
