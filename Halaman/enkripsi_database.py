@@ -144,7 +144,7 @@ def update_car_dekripsi(car_data, dekripsi_text, encryption_key):
 def delete_car(car_id):
     """Delete car from database"""
     try:
-        conn = sqlite3.connect('cars.db')
+        conn = sqlite3.connect('database.db')
         c = conn.cursor()
         c.execute('DELETE FROM cars WHERE id = ?', (car_id,))
         conn.commit()
@@ -175,7 +175,6 @@ def page_car_database():
     
     with col2:
         show_encrypted = st.checkbox("Tampilkan Data Terenkripsi", help="Lihat data asli di database")
-    
     if not encryption_key:
         st.warning("⚠️ Silakan masukkan kunci enkripsi untuk mengakses database mobil.")
         st.info("""
@@ -184,8 +183,6 @@ def page_car_database():
         - Anda bisa melihat bagaimana kunci yang berbeda menghasilkan data terdekripsi yang berbeda
         - Kunci yang benar akan menampilkan data yang bermakna
         """)
-        
-        # Tampilkan data terenkripsi saja jika checkbox dicentang
         if show_encrypted:
             display_encrypted_data_only()
         return
@@ -273,9 +270,9 @@ def page_car_database():
                     
                     with col1:
                         if decrypt_success:
-                            st.write(f"** Brand:{brand} Model:{model}**")
+                            st.write(f"**Brand:{brand} \t Model:{model}**")
                         else:
-                            st.write(f"~~Brand:{brand} Model:{model}~~")
+                            st.write(f"~~Brand:{brand} \t Model:{model}~~")
                         st.caption(f"ID: {car_id}")
                     
                     with col2:
@@ -293,7 +290,7 @@ def page_car_database():
                     
                     with col4:
                         if st.button(f"🗑️", key=f"delete_{car_id}"):
-                            if delete_car(car_id) & decrypt_success:
+                            if delete_car(car_id) and decrypt_success:
                                 st.success("✅ Data dihapus!")
                                 st.rerun()
                             else:
@@ -301,7 +298,7 @@ def page_car_database():
                     
                     st.markdown('</div>', unsafe_allow_html=True)
                     st.divider()
-
+            # Tampilkan data terenkripsi saja jika checkbox dicentang
 def display_encrypted_data():
     """Display raw encrypted data from database"""
     st.subheader("🔐 Data Terenkripsi di Database")
@@ -318,12 +315,12 @@ def display_encrypted_data():
             return
             
         for car in encrypted_cars:
-            car_id, encrypted_model, encrypted_brand, encrypted_price = car
+            car_id, encrypted_model, encrypted_brand, encrypted_price, car_decription = car
             
             with st.expander(f"Data Terenkripsi - Mobil ID {car_id}"):
                 col1, col2 = st.columns(2)
                 
-                with col1:
+                with col1:  
                     st.write("**Model:**")
                     st.code(encrypted_model)
                     st.write(f"Panjang: {len(encrypted_model)} karakter")
@@ -332,10 +329,15 @@ def display_encrypted_data():
                     st.write("**Brand:**")
                     st.code(encrypted_brand)
                     st.write(f"Panjang: {len(encrypted_brand)} karakter")
-                
+                st.write("**Deskripsi:**")
+                st.code(car_decription)
+                st.write(f"Panjang: {len(car_decription)} karakter")
+
                 st.write("**Harga:**")
                 st.code(encrypted_price)
                 st.write(f"Panjang: {len(encrypted_price)} karakter")
+
+
                 
     except Exception as e:
         st.error(f"Error mengambil data terenkripsi: {e}")
