@@ -8,6 +8,7 @@ from Halaman.stegano import page_steganography
 from Halaman.enkripsi_database import page_car_database
 from Halaman.enkripsi_database import encrypt_chacha20, decrypt_chacha20
 
+# Fungsi hashing dengan SHA-512
 def hash_password(password):
     return hashlib.sha512(password.encode()).hexdigest()
 
@@ -71,10 +72,9 @@ def validate_input(username, password):
 
 def main():
     st.set_page_config(page_title="Super Encryption App", page_icon="🔐", layout="wide")
-    
     # Initialize database
     init_db()
-    
+
     # Session state untuk login dan page
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
@@ -87,10 +87,10 @@ def main():
     if not st.session_state.logged_in:
         show_login_register()
         return
-    
-    # Jika sudah login, tampilkan navigasi dan konten
+
     show_main_app()
 
+# ===== PAGE ====
 def show_login_register():
     st.title("🔐 Aplikasi Login & Register")
     
@@ -141,12 +141,12 @@ def show_login_register():
                     st.error("Harap isi semua field!")
 
 def show_main_app():
-    # Sidebar navigation
+    # Sidebar
     with st.sidebar:
         st.title("🧭 Navigasi")
         st.write(f"Selamat datang, **{st.session_state.username}**!")
         
-        # Pilihan halaman (URUTAN BARU)
+        # Pilihan halaman
         page_options = ["Super Encryption", "Database Mobil", "Steganografi", "File Encryption"]
         selected_page = st.radio("Pilih Halaman:", page_options, 
                                index=page_options.index(st.session_state.current_page))

@@ -3,6 +3,7 @@ import base64
 from Halaman.enkripsi_database import update_car_dekripsi
 
 def caesar_cipher(text, shift):
+    """Enkripsi Caesar Cipher"""
     result = ""
     for char in str(text):
         if char.isalpha():
@@ -17,6 +18,7 @@ def caesar_cipher(text, shift):
     return result
 
 def xor_encrypt_base64(text, key):
+    """Enkripsi XOR dengan Base64"""
     result_bytes = bytearray()
     ascii_values = []
     key_length = len(key)
@@ -52,11 +54,11 @@ def xor_decrypt_base64(encrypted_base64, key):
             
         return result, ascii_values
     except Exception as e:
-        # Fallback untuk data yang bukan Base64 (kompatibilitas dengan data lama)
+        # Fallback untuk data yang bukan Base64
         return xor_decrypt_fallback(encrypted_base64, key)
 
 def xor_decrypt_fallback(encrypted_text, key):
-    """Fallback decrypt untuk data lama yang belum pakai Base64"""
+    """Fallback untuk data yang bukan Base64"""
     result = ""
     ascii_values = []
     key_length = len(key)
@@ -70,18 +72,18 @@ def xor_decrypt_fallback(encrypted_text, key):
     return result, ascii_values
 
 def super_encrypt(text, caesar_key, xor_key):
-    """Super encrypt dengan Base64 XOR"""
+    """Super encrypt dengan XOR"""
     # Step 1: Caesar Cipher
     caesar_result = caesar_cipher(text, caesar_key)
     
-    # Step 2: XOR dengan Base64 encoding
+    # Step 2: XOR dengan encoding
     final_result, ascii_values = xor_encrypt_base64(caesar_result, xor_key)
     
     return caesar_result, final_result, ascii_values
 
 def super_decrypt(encrypted_text, caesar_key, xor_key):
-    """Super decrypt dengan Base64 XOR"""
-    # Step 1: XOR decrypt (auto-detect Base64 atau legacy)
+    """Super decrypt dengan XOR"""
+    # Step 1: XOR decrypt (auto-detect atau legacy)
     xor_result, ascii_values = xor_decrypt_base64(encrypted_text, xor_key)
     
     # Step 2: Caesar decrypt
@@ -89,11 +91,12 @@ def super_decrypt(encrypted_text, caesar_key, xor_key):
     
     return xor_result, final_result, ascii_values
 
+# === PAGE ===
 def page_super_encryption():
     st.header("🔐 Super Enkripsi - Caesar + XOR")
     st.write("Tool untuk enkripsi dan dekripsi menggunakan kombinasi Caesar Cipher dan XOR Cipher")
     
-    # ===== BAGIAN BARU: DEKRIPSI MOBIL =====
+    # Tombol untuk menambahkan mobil baru
     if 'new_car_data' in st.session_state:
         st.success("🚗 Mobil baru berhasil ditambahkan! Sekarang isi deskripsi mobil:")
         
@@ -117,7 +120,7 @@ def page_super_encryption():
             with col2:
                 xor_key_desc = st.text_input(
                     "Kunci XOR untuk Deskripsi:", 
-                    value="mobil123",
+                    value="secret",
                     key="xor_desc"
                 )
             
@@ -127,8 +130,7 @@ def page_super_encryption():
                 # Enkripsi deskripsi dengan Super Encryption
                 caesar_result, final_result, ascii_values = super_encrypt(deskripsi_text, caesar_key_desc, xor_key_desc)
                 
-                # Simpan ke database (update kolom dekripsi_mobil)
-                
+                # Simpan ke database
                 if update_car_dekripsi(car_data, final_result, car_data['encryption_key']):
                     st.success("✅ Deskripsi mobil berhasil disimpan dengan Super Encryption!")
                     # Hapus session state
@@ -137,7 +139,6 @@ def page_super_encryption():
                 else:
                     st.error("❌ Gagal menyimpan deskripsi mobil!")
     
-    # ===== BAGIAN ASLI SUPER ENCRYPTION =====
     st.write("---")    
     mode = st.radio("Pilih Mode:", ["Enkripsi", "Dekripsi"])
     text_input = st.text_area("Masukkan teks:")
@@ -267,7 +268,7 @@ def page_super_encryption():
                     st.code(binary_result)
                 
                 with col_format2:
-                    st.write("**Decimal (untuk programming):**")
+                    st.write("**Decimal:**")
                     st.code(str(ascii_values))
                     
                     st.write("**Panjang Data:**")
