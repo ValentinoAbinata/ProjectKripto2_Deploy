@@ -1,8 +1,9 @@
 import streamlit as st
-from Halaman.crypto_utils import super_encrypt, super_decrypt
+import base64
 from Halaman.enkripsi_database import update_car_dekripsi
 
 def caesar_cipher(text, shift):
+    """Enkripsi Caesar Cipher"""
     result = ""
     for char in str(text):
         if char.isalpha():
@@ -16,50 +17,91 @@ def caesar_cipher(text, shift):
             result += char
     return result
 
-def xor_cipher(text, key):
-    result = ""
+def xor_encrypt_base64(text, key):
+    """Enkripsi XOR dengan Base64"""
+    result_bytes = bytearray()
+    ascii_values = []
     key_length = len(key)
+    
+    # Enkripsi setiap karakter dengan XOR
     for i, char in enumerate(str(text)):
         key_char = key[i % key_length]
         xor_result = ord(char) ^ ord(key_char)
-        result += chr(xor_result)
-    return result
+        
+        result_bytes.append(xor_result)
+        ascii_values.append(xor_result)
+    
+    # Convert ke Base64 untuk memastikan semua karakter printable
+    result_base64 = base64.b64encode(result_bytes).decode('utf-8')
+    return result_base64, ascii_values
 
-def xor_cipher_with_ascii(text, key):
-    """XOR cipher dengan return tambahan: result string dan list ASCII"""
+def xor_decrypt_base64(encrypted_base64, key):
+    """Decrypt XOR dari Base64"""
+    try:
+        # Decode dari Base64 kembali ke bytes
+        encrypted_bytes = base64.b64decode(encrypted_base64)
+        
+        result = ""
+        ascii_values = []
+        key_length = len(key)
+        
+        # Dekripsi setiap byte
+        for i, byte_val in enumerate(encrypted_bytes):
+            key_char = key[i % key_length]
+            xor_result = byte_val ^ ord(key_char)
+            result += chr(xor_result)
+            ascii_values.append(xor_result)
+            
+        return result, ascii_values
+    except Exception as e:
+        # Fallback untuk data yang bukan Base64
+        return xor_decrypt_fallback(encrypted_base64, key)
+
+def xor_decrypt_fallback(encrypted_text, key):
+    """Fallback untuk data yang bukan Base64"""
     result = ""
     ascii_values = []
     key_length = len(key)
-    for i, char in enumerate(str(text)):
+    
+    for i, char in enumerate(encrypted_text):
         key_char = key[i % key_length]
         xor_result = ord(char) ^ ord(key_char)
         result += chr(xor_result)
         ascii_values.append(xor_result)
+        
     return result, ascii_values
 
 def super_encrypt(text, caesar_key, xor_key):
-    """Super encrypt dengan return tambahan untuk ASCII values"""
+    """Super encrypt dengan XOR"""
+    # Step 1: Caesar Cipher
     caesar_result = caesar_cipher(text, caesar_key)
-    final_result, ascii_values = xor_cipher_with_ascii(caesar_result, xor_key)
+    
+    # Step 2: XOR dengan encoding
+    final_result, ascii_values = xor_encrypt_base64(caesar_result, xor_key)
+    
     return caesar_result, final_result, ascii_values
 
 def super_decrypt(encrypted_text, caesar_key, xor_key):
-    """Super decrypt dengan return tambahan untuk ASCII values"""
-    xor_result, ascii_values = xor_cipher_with_ascii(encrypted_text, xor_key)
+    """Super decrypt dengan XOR"""
+    # Step 1: XOR decrypt (auto-detect atau legacy)
+    xor_result, ascii_values = xor_decrypt_base64(encrypted_text, xor_key)
+    
+    # Step 2: Caesar decrypt
     final_result = caesar_cipher(xor_result, -caesar_key)
+    
     return xor_result, final_result, ascii_values
 
-
+# === PAGE ===
 def page_super_encryption():
     st.header("🔐 Super Enkripsi - Caesar + XOR")
     st.write("Tool untuk enkripsi dan dekripsi menggunakan kombinasi Caesar Cipher dan XOR Cipher")
     
-    # ===== BAGIAN BARU: DEKRIPSI MOBIL =====
+    # Tombol untuk menambahkan mobil baru
     if 'new_car_data' in st.session_state:
         st.success("🚗 Mobil baru berhasil ditambahkan! Sekarang isi deskripsi mobil:")
         
         car_data = st.session_state.new_car_data
-        st.info(f"**Data Mobil:**{car_data['id']} {car_data['brand']} {car_data['model']} - Rp {car_data['price']:,}")
+        st.info(f"**Data Mobil:** {car_data['brand']} {car_data['model']} - Rp {car_data['price']:,}")
         
         with st.form("dekripsi_mobil_form"):
             deskripsi_text = st.text_area(
@@ -78,7 +120,7 @@ def page_super_encryption():
             with col2:
                 xor_key_desc = st.text_input(
                     "Kunci XOR untuk Deskripsi:", 
-                    value="mobil123",
+                    value="secret",
                     key="xor_desc"
                 )
             
@@ -88,7 +130,7 @@ def page_super_encryption():
                 # Enkripsi deskripsi dengan Super Encryption
                 caesar_result, final_result, ascii_values = super_encrypt(deskripsi_text, caesar_key_desc, xor_key_desc)
                 
-                # Simpan ke database (update kolom dekripsi_mobil)
+                # Simpan ke database
                 if update_car_dekripsi(car_data, final_result, car_data['encryption_key']):
                     st.success("✅ Deskripsi mobil berhasil disimpan dengan Super Encryption!")
                     # Hapus session state
@@ -97,18 +139,17 @@ def page_super_encryption():
                 else:
                     st.error("❌ Gagal menyimpan deskripsi mobil!")
     
-    # ===== BAGIAN ASLI SUPER ENCRYPTION =====
-    st.write("---")
+    st.write("---")    
     mode = st.radio("Pilih Mode:", ["Enkripsi", "Dekripsi"])
     text_input = st.text_area("Masukkan teks:")
     
     col1, col2 = st.columns(2)
     with col1:
-        caesar_key = st.number_input("Kunci Caesar:", min_value=-100, max_value=100, value=1)
+        caesar_key = st.number_input("Kunci Caesar:", min_value=-100, max_value=100, value=3)
     with col2:
-        xor_key = st.text_input("Kunci XOR:", value="secret")
+        xor_key = st.text_input("Kunci XOR:", value="secret", help="Kunci untuk XOR cipher")
     
-    show_ascii = st.checkbox("📊 Tampilkan Detail ASCII", value=True)
+    show_ascii = st.checkbox("📊 Tampilkan Detail Proses", value=True)
     
     if st.button(f"🚀 Jalankan {mode}"):
         if not text_input:
@@ -123,42 +164,36 @@ def page_super_encryption():
             st.subheader("🔒 Hasil Enkripsi")
             caesar_result, final_result, ascii_values = super_encrypt(text_input, caesar_key, xor_key)
             
-            # Tampilkan step-by-step process
-            col_step1, col_step2 = st.columns(2)
+            # Tampilkan hasil
+            st.success("✅ Enkripsi berhasil!")
             
-            with col_step1:
-                st.write("**Step 1 - Caesar Cipher:**")
-                st.code(f"Input: {text_input}")
-                st.code(f"Setelah Caesar (shift {caesar_key}): {caesar_result}")
+            if show_ascii:
+                col_step1, col_step2 = st.columns(2)
                 
-                if show_ascii:
+                with col_step1:
+                    st.write("**Step 1 - Caesar Cipher:**")
+                    st.code(f"Input: {text_input}")
+                    st.code(f"Setelah Caesar (shift {caesar_key}): {caesar_result}")
+                    
                     st.write("**ASCII Caesar Result:**")
                     caesar_ascii = [ord(c) for c in caesar_result]
                     st.code(caesar_ascii)
                     st.caption(f"Panjang: {len(caesar_ascii)} karakter")
-            
-            with col_step2:
-                st.write("**Step 2 - XOR Cipher:**")
-                st.code(f"Setelah XOR (kunci '{xor_key}'): {final_result}")
                 
-                if show_ascii:
-                    st.write("**ASCII XOR Result:**")
+                with col_step2:
+                    st.write("**Step 2 - XOR Cipher (dengan Base64):**")
+                    st.code(f"Setelah XOR + Base64: {final_result}")
+                    
+                    st.write("**ASCII XOR Result (sebelum Base64):**")
                     st.code(ascii_values)
                     st.caption(f"Panjang: {len(ascii_values)} karakter")
-                    
-                    # Tampilkan detail per karakter
-                    with st.expander("🔍 Detail Per Karakter XOR"):
-                        st.write("**Proses XOR per karakter:**")
-                        for i, char in enumerate(caesar_result):
-                            if i < len(ascii_values):
-                                key_char = xor_key[i % len(xor_key)]
-                                st.write(f"`{char}` (ASCII: {ord(char):3d}) XOR `{key_char}` (ASCII: {ord(key_char):3d}) = `{final_result[i]}` (ASCII: {ascii_values[i]:3d})")
             
+            # Hasil final
             st.write("**🎯 Hasil Final Enkripsi:**")
-            st.success(final_result)
+            st.text_area("Salin hasil enkripsi:", value=final_result, height=100, key="encrypted_result")
             
-            # Tampilkan dalam berbagai format
-            with st.expander("📋 Hasil dalam Format Lain"):
+            # Tampilkan format data dalam expander
+            with st.expander("📋 Detail Format Data"):
                 col_format1, col_format2 = st.columns(2)
                 
                 with col_format1:
@@ -177,57 +212,67 @@ def page_super_encryption():
                     st.write("**Panjang Data:**")
                     st.info(f"Input: {len(text_input)} karakter → Output: {len(final_result)} karakter")
             
-            st.text_input("Salin hasil enkripsi:", value=final_result, key="encrypted_result")
-            
         else:  # Mode Dekripsi
             st.subheader("🔓 Hasil Dekripsi")
+            
+            # Cek format input
+            is_base64 = False
+            try:
+                # Coba decode sebagai Base64
+                decoded = base64.b64decode(text_input)
+                is_base64 = True
+            except:
+                is_base64 = False
+            
             xor_result, final_result, ascii_values = super_decrypt(text_input, caesar_key, xor_key)
             
-            # Tampilkan step-by-step process
-            col_step1, col_step2 = st.columns(2)
+            st.success("✅ Dekripsi berhasil!")
             
-            with col_step1:
-                st.write("**Step 1 - XOR Decrypt:**")
-                st.code(f"Input: {text_input}")
-                st.code(f"Setelah XOR (kunci '{xor_key}'): {xor_result}")
+            if show_ascii:
+                col_step1, col_step2 = st.columns(2)
                 
-                if show_ascii:
+                with col_step1:
+                    st.write("**Step 1 - XOR Decrypt:**")
+                    st.code(f"Input: {text_input}")
+                    st.code(f"Format terdeteksi: {'Base64' if is_base64 else 'Legacy'}")
+                    st.code(f"Setelah XOR decrypt: {xor_result}")
+                    
                     st.write("**ASCII XOR Result:**")
                     st.code(ascii_values)
                     st.caption(f"Panjang: {len(ascii_values)} karakter")
-                    
-                    # Tampilkan detail per karakter untuk XOR decrypt
-                    with st.expander("🔍 Detail Per Karakter XOR Decrypt"):
-                        st.write("**Proses XOR per karakter:**")
-                        input_ascii = [ord(c) for c in text_input]
-                        for i, char in enumerate(text_input):
-                            if i < len(ascii_values) and i < len(xor_result):
-                                key_char = xor_key[i % len(xor_key)]
-                                st.write(f"`{char}` (ASCII: {input_ascii[i]:3d}) XOR `{key_char}` (ASCII: {ord(key_char):3d}) = `{xor_result[i]}` (ASCII: {ascii_values[i]:3d})")
-            
-            with col_step2:
-                st.write("**Step 2 - Caesar Decrypt:**")
-                st.code(f"Setelah Caesar (shift -{caesar_key}): {final_result}")
                 
-                if show_ascii:
+                with col_step2:
+                    st.write("**Step 2 - Caesar Decrypt:**")
+                    st.code(f"Setelah Caesar (shift -{caesar_key}): {final_result}")
+                    
                     st.write("**ASCII Final Result:**")
                     final_ascii = [ord(c) for c in final_result]
                     st.code(final_ascii)
                     st.caption(f"Panjang: {len(final_ascii)} karakter")
             
+            # Hasil final
             st.write("**🎯 Hasil Final Dekripsi:**")
-            st.success(final_result)
+            st.text_area("Salin hasil dekripsi:", value=final_result, height=100, key="decrypted_result")
             
-            # Validasi hasil
-            if show_ascii:
-                with st.expander("✅ Validasi Hasil"):
-                    # Test dengan enkripsi ulang untuk validasi
-                    test_encrypted, _, _ = super_encrypt(final_result, caesar_key, xor_key)
-                    if test_encrypted == text_input:
-                        st.success("✅ Validasi berhasil: Enkripsi ulang menghasilkan input awal!")
-                    else:
-                        st.warning("⚠️ Validasi gagal: Hasil dekripsi mungkin tidak akurat")
-                        st.write(f"Input awal: {text_input}")
-                        st.write(f"Enkripsi ulang: {test_encrypted}")
-            
-            st.text_input("Salin hasil dekripsi:", value=final_result, key="decrypted_result")
+            # Tampilkan format data dalam expander
+            with st.expander("📋 Detail Format Data"):
+                col_format1, col_format2 = st.columns(2)
+                
+                with col_format1:
+                    st.write("**Hexadecimal:**")
+                    hex_result = ' '.join([f"{b:02x}" for b in ascii_values])
+                    st.code(hex_result)
+                    
+                    st.write("**Binary:**")
+                    binary_result = ' '.join([format(b, '08b') for b in ascii_values])
+                    st.code(binary_result)
+                
+                with col_format2:
+                    st.write("**Decimal:**")
+                    st.code(str(ascii_values))
+                    
+                    st.write("**Panjang Data:**")
+                    st.info(f"Input: {len(text_input)} karakter → Output: {len(final_result)} karakter")
+
+if __name__ == "__main__":
+    page_super_encryption()

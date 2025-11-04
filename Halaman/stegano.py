@@ -3,11 +3,12 @@ import numpy as np
 from PIL import Image
 import io
 
-# ---- util ----
 def text_to_binary(text):
+    """Konversi teks ke biner (8-bit per karakter)"""
     return ''.join(format(ord(i), '08b') for i in text)
 
 def binary_to_text(binary):
+    """Konversi biner kembali ke teks"""
     text = ''
     for i in range(0, len(binary), 8):
         byte = binary[i:i+8]
@@ -17,25 +18,31 @@ def binary_to_text(binary):
     return text
 
 def calculate_complexity(block):
+    """Hitung kompleksitas blok gambar berdasarkan varians"""
     return np.var(block)
 
 def get_adaptive_bits(complexity, thresholds=(10,50)):
+    """Tentukan jumlah bit LSB berdasarkan kompleksitas"""
+
     low_thresh, high_thresh = thresholds
     if complexity < low_thresh:
-        return 1
+        return 1  # Area homogen, gunakan 1 bit LSB
     elif complexity < high_thresh:
-        return 2
+        return 2  # Area sedang, gunakan 2 bit LSB
     else:
-        return 3
+        return 3  # Area kompleks, gunakan 3 bit LSB
 
-# ---- TEXT encode/decode ----
+# === FUNGSI STEGANOGRAFI TEKS DENGAN ADAPTIVE LSB ===
 def encode_image_adaptive_lsb(image, message, block_size=8, thresholds=(10,50)):
+    """Encode pesan teks ke dalam gambar menggunakan adaptive LSB"""
+    # Konversi gambar ke array numpy RGB
     img_array = np.array(image.convert('RGB'), dtype=np.uint8)
+    # Konversi pesan ke biner dan tambahkan delimiter
     binary_message = text_to_binary(message) + '1111111111111110'  # delimiter
 
     host_h, host_w = img_array.shape[:2]
 
-    # capacity calc
+    # Hitung kapasitas maksimal gambar
     max_bits = 0
     for y in range(0, host_h, block_size):
         for x in range(0, host_w, block_size):
@@ -45,12 +52,14 @@ def encode_image_adaptive_lsb(image, message, block_size=8, thresholds=(10,50)):
                 bits_per_pixel = get_adaptive_bits(complexity, thresholds)
                 max_bits += block.size * bits_per_pixel
 
+    # Validasi kapasitas pesan
     if len(binary_message) > max_bits:
         raise ValueError(f"Pesan terlalu panjang! Maksimal {max_bits//8} karakter untuk gambar ini.")
 
     message_index = 0
     encoded_array = img_array.copy()
 
+    # Proses embedding bit per blok
     for y in range(0, host_h, block_size):
         for x in range(0, host_w, block_size):
             if message_index >= len(binary_message):
@@ -59,21 +68,25 @@ def encode_image_adaptive_lsb(image, message, block_size=8, thresholds=(10,50)):
             if block.size == 0:
                 continue
 
+            # Hitung kompleksitas dan tentukan bit LSB untuk blok ini
             complexity = calculate_complexity(block)
             bits_to_use = get_adaptive_bits(complexity, thresholds)
 
-            flat_block = block.reshape(-1)  # view when possible
+            # Flatten blok untuk memudahkan processing
+            flat_block = block.reshape(-1)
             for i in range(len(flat_block)):
                 if message_index >= len(binary_message):
                     break
                 pixel = int(flat_block[i])
+                # Tentukan berapa bit yang bisa disisipkan
                 bits_available = min(bits_to_use, len(binary_message) - message_index)
+                # Buat mask dan sisipkan bit
                 mask = (0xFF << bits_available) & 0xFF
                 new_value = (pixel & mask) | int(binary_message[message_index:message_index+bits_available], 2)
                 flat_block[i] = new_value
                 message_index += bits_available
 
-            # write back safe
+            # Tulis kembali blok yang telah dimodifikasi
             encoded_array[y:y+block.shape[0], x:x+block.shape[1]] = flat_block.reshape(block.shape)
 
         if message_index >= len(binary_message):
@@ -82,12 +95,14 @@ def encode_image_adaptive_lsb(image, message, block_size=8, thresholds=(10,50)):
     return Image.fromarray(encoded_array.astype('uint8'))
 
 def decode_image_adaptive_lsb(image, block_size=8, thresholds=(10,50)):
+    """Decode pesan teks dari gambar menggunakan adaptive LSB"""
     img_array = np.array(image.convert('RGB'), dtype=np.uint8)
     host_h, host_w = img_array.shape[:2]
 
     binary_message = ''
     message_complete = False
 
+    # Ekstraksi bit dari setiap blok
     for y in range(0, host_h, block_size):
         for x in range(0, host_w, block_size):
             if message_complete:
@@ -96,9 +111,11 @@ def decode_image_adaptive_lsb(image, block_size=8, thresholds=(10,50)):
             if block.size == 0:
                 continue
 
+            # Hitung kompleksitas dan tentukan bit LSB yang digunakan
             complexity = calculate_complexity(block)
             bits_to_use = get_adaptive_bits(complexity, thresholds)
 
+            # Ekstrak bit dari setiap pixel dalam blok
             flat_block = block.reshape(-1)
             for pixel in flat_block:
                 if message_complete:
@@ -107,24 +124,26 @@ def decode_image_adaptive_lsb(image, block_size=8, thresholds=(10,50)):
                 binary_bits = format(bits, f'0{bits_to_use}b')
                 binary_message += binary_bits
 
+                # Cek delimiter untuk mengetahui akhir pesan
                 if '1111111111111110' in binary_message:
                     message_complete = True
                     end_index = binary_message.find('1111111111111110')
                     binary_message = binary_message[:end_index]
                     break
 
-    # decode to text (8-bit chunks)
+    # Konversi biner kembali ke teks
     return binary_to_text(binary_message)
 
-# ---- IMAGE-IN-IMAGE encode/decode ----
+# === FUNGSI STEGANOGRAFI GAMBAR DALAM GAMBAR DENGAN ADAPTIVE LSB ===
 def encode_image_in_image_adaptive_lsb(host_image: Image.Image, secret_image: Image.Image, block_size=8, thresholds=(10,50)) -> Image.Image:
+    """Sembunyikan gambar dalam gambar menggunakan adaptive LSB"""
     host_arr = np.array(host_image.convert('RGB'), dtype=np.uint8)
     secret_arr = np.array(secret_image.convert('RGB'), dtype=np.uint8)
 
     host_h, host_w = host_arr.shape[:2]
     secret_h, secret_w = secret_arr.shape[:2]
 
-    # calc capacity
+    # Hitung kapasitas maksimal gambar host
     max_bits = 0
     for y in range(0, host_h, block_size):
         for x in range(0, host_w, block_size):
@@ -134,8 +153,10 @@ def encode_image_in_image_adaptive_lsb(host_image: Image.Image, secret_image: Im
                 bits_per_pixel = get_adaptive_bits(complexity, thresholds)
                 max_bits += block.size * bits_per_pixel
 
-    secret_bits_needed = 32 + (secret_w * secret_h * 3 * 8)
+    # Hitung bit yang dibutuhkan untuk menyimpan gambar rahasia
+    secret_bits_needed = 32 + (secret_w * secret_h * 3 * 8)  # 32 bit untuk dimensi
     if secret_bits_needed > max_bits:
+        # Jika kapasitas tidak cukup, resize gambar rahasia
         resize_factor = (max_bits - 32) / (secret_arr.size * 8)
         if resize_factor <= 0:
             raise ValueError("Host image tidak cukup besar untuk menyimpan gambar rahasia.")
@@ -144,12 +165,14 @@ def encode_image_in_image_adaptive_lsb(host_image: Image.Image, secret_image: Im
         secret_arr = np.array(secret_image.convert('RGB'), dtype=np.uint8)
         secret_h, secret_w = secret_arr.shape[:2]
 
+    # Siapkan data biner: 16 bit untuk lebar + 16 bit untuk tinggi + data pixel
     dimension_bits = format(secret_w, '016b') + format(secret_h, '016b')
     binary_secret = dimension_bits + ''.join([format(pixel, '08b') for pixel in secret_arr.flatten()])
 
     message_index = 0
     encoded_array = host_arr.copy()
 
+    # Proses embedding gambar rahasia ke host image
     for y in range(0, host_h, block_size):
         for x in range(0, host_w, block_size):
             if message_index >= len(binary_secret):
@@ -180,11 +203,13 @@ def encode_image_in_image_adaptive_lsb(host_image: Image.Image, secret_image: Im
     return Image.fromarray(encoded_array.astype('uint8'))
 
 def decode_image_from_image_adaptive_lsb(stego_image: Image.Image, block_size=8, thresholds=(10,50)) -> Image.Image:
+    """Ekstrak gambar rahasia dari gambar host"""
     stego_arr = np.array(stego_image.convert('RGB'), dtype=np.uint8)
     host_h, host_w = stego_arr.shape[:2]
     binary_data = ''
     data_complete = False
 
+    # Ekstraksi data biner dari gambar
     for y in range(0, host_h, block_size):
         for x in range(0, host_w, block_size):
             if data_complete:
@@ -202,6 +227,7 @@ def decode_image_from_image_adaptive_lsb(stego_image: Image.Image, block_size=8,
                 binary_bits = format(bits, f'0{bits_to_use}b')
                 binary_data += binary_bits
 
+                # Cek apakah sudah cukup data untuk membaca dimensi
                 if len(binary_data) >= 32:
                     try:
                         secret_w = int(binary_data[:16], 2)
@@ -216,22 +242,28 @@ def decode_image_from_image_adaptive_lsb(stego_image: Image.Image, block_size=8,
     if len(binary_data) < 32:
         raise ValueError("Tidak cukup data untuk mengekstrak dimensi gambar")
 
+    # Ekstrak dimensi dan data pixel
     secret_w = int(binary_data[:16], 2)
     secret_h = int(binary_data[16:32], 2)
     binary_pixels = binary_data[32:]
     secret_pixels = []
+    
+    # Konversi biner kembali ke nilai pixel
     for i in range(0, len(binary_pixels), 8):
         if i + 8 <= len(binary_pixels):
             secret_pixels.append(int(binary_pixels[i:i+8], 2))
 
+    # Rekonstruksi gambar rahasia
     secret_arr = np.array(secret_pixels[:secret_w * secret_h * 3], dtype=np.uint8)
     secret_arr = secret_arr.reshape((secret_h, secret_w, 3))
     return Image.fromarray(secret_arr)
+
 def page_steganography():
+    """Halaman utama steganografi adaptive LSB"""
     st.header("Steganografi Adaptive LSB - Sembunyikan Pesan/Gambar dalam Gambar")
     st.write("Teknik untuk menyembunyikan pesan rahasia atau gambar dalam gambar menggunakan **Adaptive LSB (Least Significant Bit)**")
     
-    # ===== TAB DEFINITIONS =====
+    # ===== TAB DEFINISI =====
     tab1, tab2, tab3, tab4 = st.tabs([
         "Encode Pesan Adaptive LSB", 
         "Decode Pesan Adaptive LSB", 
@@ -251,7 +283,7 @@ def page_steganography():
             
             secret_message = st.text_area("Pesan rahasia yang akan disembunyikan:", key="text_secret_adaptive")
             
-            # Advanced options
+            # Pengaturan lanjutan untuk adaptive LSB
             with st.expander("⚙️ Pengaturan Lanjutan"):
                 block_size = st.slider("Ukuran Blok:", min_value=4, max_value=16, value=8, 
                                      help="Ukuran blok untuk analisis kompleksitas")
@@ -264,7 +296,7 @@ def page_steganography():
                 if secret_message:
                     try:
                         with st.spinner("Mengkodekan pesan dengan Adaptive LSB..."):
-                            # Use custom thresholds
+                            # Fungsi untuk menentukan bit LSB berdasarkan threshold kustom
                             def get_custom_bits(complexity):
                                 if complexity < low_thresh:
                                     return 1
@@ -273,7 +305,7 @@ def page_steganography():
                                 else:
                                     return 3
                             
-                            # Calculate capacity first
+                            # Hitung kapasitas gambar terlebih dahulu
                             img_array = np.array(image)
                             height, width = img_array.shape[:2]
                             max_bits = 0
@@ -287,9 +319,10 @@ def page_steganography():
                             
                             st.info(f"Kapasitas maksimal: {max_bits//8} karakter")
                             
+                            # Encode pesan ke gambar
                             encoded_image = encode_image_adaptive_lsb(image, secret_message, block_size)
                             
-                            # Tampilkan perbandingan
+                            # Tampilkan perbandingan gambar asli dan hasil
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.image(image, caption="Gambar Asli", use_container_width=True)
@@ -297,6 +330,7 @@ def page_steganography():
                                 st.image(encoded_image, caption="Gambar dengan Adaptive LSB", use_container_width=True)
     
                             
+                            # Siapkan download button untuk gambar hasil
                             buf = io.BytesIO()
                             encoded_image.save(buf, format='PNG')
                             st.download_button(
@@ -360,7 +394,7 @@ def page_steganography():
             secret_image = st.file_uploader("Pilih gambar rahasia:", type=['png'], key="secret_img_adaptive")
         
         if cover_image and secret_image:
-            # Display both images
+            # Tampilkan kedua gambar
             col1, col2 = st.columns(2)
             
             with col1:
@@ -380,19 +414,19 @@ def page_steganography():
             if st.button("Sembunyikan Gambar", key="btn_encode_img_adaptive"):
                 try:
                     with st.spinner("Menyembunyikan gambar..."):
-                        # Encode secret image into cover image using Adaptive LSB
+                        # Encode gambar rahasia ke dalam gambar cover menggunakan Adaptive LSB
                         result_image = encode_image_in_image_adaptive_lsb(cover_img, secret_img, img_block_size)
                         
                         st.success("Gambar berhasil disembunyikan!")
                         
-                        # Display comparison
+                        # Tampilkan perbandingan
                         col1, col2 = st.columns(2)
                         with col1:
                             st.image(cover_img, caption="Gambar Cover Asli", use_container_width=True)
                         with col2:
                             st.image(result_image, caption="Gambar dengan Adaptive LSB", use_container_width=True)
                         
-                        # Download button
+                        # Download button untuk gambar hasil
                         buf = io.BytesIO()
                         result_image.save(buf, format='PNG')
                         st.download_button(
@@ -423,15 +457,15 @@ def page_steganography():
             if st.button("🔍 Ekstrak Gambar Rahasia (Adaptive LSB)", key="btn_decode_img_adaptive"):
                 try:
                     with st.spinner("🔄 Mengekstrak gambar rahasia dari Adaptive LSB..."):
-                        # Decode secret image from cover image using Adaptive LSB
+                        # Decode gambar rahasia dari gambar cover menggunakan Adaptive LSB
                         secret_img_extracted = decode_image_from_image_adaptive_lsb(encoded_img, decode_img_block_size)
                         
                         st.success("✅ Gambar rahasia berhasil diekstrak dari Adaptive LSB!")
                         
-                        # Display extracted image
+                        # Tampilkan gambar yang diekstrak
                         st.image(secret_img_extracted, caption="Gambar Rahasia yang Ditemukan", use_container_width=True)
                         
-                        # Download button for extracted image
+                        # Download button untuk gambar yang diekstrak
                         buf = io.BytesIO()
                         secret_img_extracted.save(buf, format='PNG')
                         st.download_button(

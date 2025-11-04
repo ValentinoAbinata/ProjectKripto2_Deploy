@@ -1,14 +1,11 @@
 import streamlit as st
 import hashlib
-
 import base64
 import hashlib
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
 
-
-# ---------- Encryption / Decryption core ----------
 def encrypt_file(file_bytes: bytes, key: str) -> tuple[bytes, bytes]:
     """Enkripsi file menggunakan AES-128."""
     # Generate key dan iv - AES-128 butuh 16 byte key
