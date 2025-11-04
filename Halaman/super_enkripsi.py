@@ -1,5 +1,4 @@
 import streamlit as st
-from Halaman.crypto_utils import super_encrypt, super_decrypt
 from Halaman.enkripsi_database import update_car_dekripsi
 
 def caesar_cipher(text, shift):

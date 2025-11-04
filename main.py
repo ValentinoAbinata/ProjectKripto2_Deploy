@@ -6,7 +6,7 @@ from Halaman.super_enkripsi import page_super_encryption
 from Halaman.enkripsi_file import page_file_encryption
 from Halaman.stegano import page_steganography
 from Halaman.enkripsi_database import page_car_database
-from Halaman.crypto_utils import decrypt_chacha20, encrypt_chacha20
+from Halaman.enkripsi_database import encrypt_chacha20, decrypt_chacha20
 
 def hash_password(password):
     return hashlib.sha512(password.encode()).hexdigest()
