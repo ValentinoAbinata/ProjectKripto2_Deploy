@@ -260,12 +260,6 @@ def page_car_database():
         show_encrypted = st.checkbox("Tampilkan Data Terenkripsi", help="Lihat data asli di database")
     if not encryption_key:
         st.warning("⚠️ Silakan masukkan kunci enkripsi untuk mengakses database mobil.")
-        st.info("""
-        **Fitur Baru:**
-        - Data akan tetap ditampilkan meski kunci salah
-        - Anda bisa melihat bagaimana kunci yang berbeda menghasilkan data terdekripsi yang berbeda
-        - Kunci yang benar akan menampilkan data yang bermakna
-        """)
         if show_encrypted:
             display_encrypted_data_only()
         return
@@ -427,7 +421,7 @@ def display_encrypted_data():
 
 def display_encrypted_data_only():
     """Display only encrypted data when no key is provided"""
-    st.subheader("🔐 Data Terenkripsi di Database")
-    st.info("Masukkan kunci untuk mencoba mendekripsi data berikut:")
+    # st.subheader("🔐 Data Terenkripsi di Database")
+    # st.info("Masukkan kunci untuk mencoba mendekripsi data berikut:")
     
     display_encrypted_data()
