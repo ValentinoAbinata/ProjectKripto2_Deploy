@@ -1,7 +1,7 @@
 # ProjectKripto
 Anggota Kelompok: 
-Valentino Abinata / 123230013
-Salman Faris / 123230024
+1. Valentino Abinata / 123230013
+2. Salman Faris / 123230024
 
 ## Cara Menjalankan Programnya
 1. Install library dengan cara : pip install streamlit pycryptodome numpy pillow
