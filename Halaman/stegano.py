@@ -408,7 +408,7 @@ def page_steganography():
                 st.write(f"Ukuran: {secret_img.size[0]} x {secret_img.size[1]}")
             
             with st.expander("⚙️ Pengaturan Encoding Gambar"):
-                img_block_size = st.slider("Ukuran Blok:", min_value=4, max_value=16, value=8, 
+                img_block_size = st.slider("Ukuran Blok:", min_value=4, max_value=128, value=8, 
                                          key="img_block", help="Ukuran blok untuk analisis kompleksitas")
             
             if st.button("Sembunyikan Gambar", key="btn_encode_img_adaptive"):
@@ -451,7 +451,7 @@ def page_steganography():
             st.image(encoded_img, caption="Gambar Encoded (Adaptive LSB)", use_container_width=True)
             
             with st.expander("⚙️ Pengaturan Decode Gambar"):
-                decode_img_block_size = st.slider("Ukuran Blok Decode:", min_value=4, max_value=16, value=8, 
+                decode_img_block_size = st.slider("Ukuran Blok Decode:", min_value=4, max_value=128, value=8, 
                                                 key="decode_img_block", help="Harus sama dengan saat encoding")
             
             if st.button("🔍 Ekstrak Gambar Rahasia (Adaptive LSB)", key="btn_decode_img_adaptive"):
