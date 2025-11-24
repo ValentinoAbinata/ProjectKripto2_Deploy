@@ -145,7 +145,7 @@ def page_super_encryption():
     
     col1, col2 = st.columns(2)
     with col1:
-        caesar_key = st.number_input("Kunci Caesar:", min_value=--1000000000000, max_value=-1000000000000, value=3)
+        caesar_key = st.number_input("Kunci Caesar:", min_value=--1000000000000, max_value=1000000000000, value=3)
     with col2:
         xor_key = st.text_input("Kunci XOR:", value="secret", help="Kunci untuk XOR cipher")
     
