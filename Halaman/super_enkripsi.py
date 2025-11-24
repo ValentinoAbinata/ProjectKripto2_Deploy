@@ -114,7 +114,7 @@ def page_super_encryption():
             with col1:
                 caesar_key_desc = st.number_input(
                     "Kunci Caesar untuk Deskripsi:", 
-                    min_value=-100, max_value=100, value=3,
+                    min_value=-1000000000000, max_value=1000000000000, value=3,
                     key="caesar_desc"
                 )
             with col2:
